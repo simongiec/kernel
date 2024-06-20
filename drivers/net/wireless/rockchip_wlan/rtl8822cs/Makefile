@@ -3,7 +3,7 @@ EXTRA_CFLAGS += -O1
 #EXTRA_CFLAGS += -O3
 #EXTRA_CFLAGS += -Wall
 #EXTRA_CFLAGS += -Wextra
-#EXTRA_CFLAGS += -Werror
+EXTRA_CFLAGS += -Werror
 #EXTRA_CFLAGS += -pedantic
 #EXTRA_CFLAGS += -Wshadow -Wpointer-arith -Wcast-qual -Wstrict-prototypes -Wmissing-prototypes
 
@@ -11,7 +11,7 @@ EXTRA_CFLAGS += -Wno-unused-variable
 #EXTRA_CFLAGS += -Wno-unused-value
 #EXTRA_CFLAGS += -Wno-unused-label
 #EXTRA_CFLAGS += -Wno-unused-parameter
-#EXTRA_CFLAGS += -Wno-unused-function
+EXTRA_CFLAGS += -Wno-unused-function
 #EXTRA_CFLAGS += -Wno-unused
 #EXTRA_CFLAGS += -Wno-uninitialized
 
@@ -2621,7 +2621,7 @@ ifeq ($(CONFIG_RTL8723B), y)
 $(MODULE_NAME)-$(CONFIG_MP_INCLUDED)+= core/rtw_bt_mp.o
 endif
 
-obj-$(CONFIG_RTL8822CS) := $(MODULE_NAME).o
+obj-m := $(MODULE_NAME).o
 
 ############# MEMORY MANAGMENT #############
 ifneq ($(CONFIG_RTKM), n)
@@ -2637,7 +2637,7 @@ EXTRA_CFLAGS += -DCONFIG_PREALLOC_RX_SKB_BUFFER
 _MEMM_FILES += core/rtw_mem.o
 _MEMM_FILES += os_dep/osdep_service.o
 $(RTKM_MODULE)-y += $(_MEMM_FILES)
-obj-$(CONFIG_RTL8822CS) += $(RTKM_MODULE).o
+obj-m += $(RTKM_MODULE).o
 endif
 endif
 
