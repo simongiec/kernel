@@ -20,6 +20,7 @@ obj-$(CONFIG_MII) += mii.o
 obj-$(CONFIG_MDIO) += mdio.o
 obj-$(CONFIG_NET) += Space.o loopback.o
 obj-$(CONFIG_NETCONSOLE) += netconsole.o
+obj-$(CONFIG_LTE_RM500U) += lte_rm500u.o
 obj-y += phy/
 obj-y += mdio/
 obj-y += pcs/

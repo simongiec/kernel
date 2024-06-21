@@ -390,6 +390,11 @@ config VETH
 	  When one end receives the packet it appears on its pair and vice
 	  versa.
 
+config LTE_RM500U
+	tristate "LTE rm500u support"
+	help
+	  Enable LTE rm500u drivers for Rockchip platform.
+	  
 config VIRTIO_NET
 	tristate "Virtio network driver"
 	depends on VIRTIO
