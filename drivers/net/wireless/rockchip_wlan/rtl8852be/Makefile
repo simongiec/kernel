@@ -134,7 +134,7 @@ CONFIG_RTW_ANDROID = 0
 ifeq ($(shell test $(CONFIG_RTW_ANDROID) -gt 0; echo $$?), 0)
 EXTRA_CFLAGS += -DCONFIG_RTW_ANDROID=$(CONFIG_RTW_ANDROID)
 endif
-
+EXTRA_CFLAGS += -DCONFIG_RTW_IOCTL_SET_COUNTRY
 ########################## Debug ###########################
 CONFIG_RTW_DEBUG = y
 # default log level is _DRV_INFO_ = 4,
