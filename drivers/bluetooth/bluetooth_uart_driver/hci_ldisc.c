@@ -39,6 +39,7 @@
 #include <linux/ioctl.h>
 #include <linux/skbuff.h>
 #include <linux/version.h>
+#include <linux/reboot.h>
 #include <net/bluetooth/bluetooth.h>
 #include <net/bluetooth/hci_core.h>
 
@@ -54,7 +55,8 @@
 #include "rtk_coex.h"
 #endif
 
-#define VERSION "2.2.3634cd9.20220519-142433"
+#define VERSION "2.2.984b58b.20240920-181230"
+
 
 #if HCI_VERSION_CODE > KERNEL_VERSION(3, 4, 0)
 #define GET_DRV_DATA(x)		hci_get_drvdata(x)
@@ -333,6 +335,7 @@ static int hci_uart_open(struct hci_dev *hdev)
 	/* Undo clearing this from hci_uart_close() */
 	hdev->flush = hci_uart_flush;
 
+	set_bit(HCI_UP, &hdev->flags);
 #if HCI_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
 	set_bit(HCI_RUNNING, &hdev->flags);
 #endif
@@ -840,6 +843,11 @@ static int hci_uart_pm_notifier(struct notifier_block *b, unsigned long v, void 
 			BT_ERR("rtkbt_set_le_device_poweron_data_filter error: %d", result);
 		}
 #endif
+
+#ifndef RTKBT_POWERKEY_WAKEUP
+		/*for any key wakeup, don't need to send 0xfc28 */
+		break;
+#endif
 		result = rtkbt_notify_suspend(hu);
 		if (result < 0) {
 			BT_ERR("rtkbt_notify_suspend error: %d", result);
@@ -853,7 +861,10 @@ static int hci_uart_pm_notifier(struct notifier_block *b, unsigned long v, void 
 			break;
 		BT_INFO("rtl resume: hci ver %u, hci rev %04x, lmp subver %04x",
 			hci_ver, hci_rev, lmp_subver);
-
+#ifndef RTKBT_POWERKEY_WAKEUP
+		/*for any key wakeup, keep connections for key event report */
+		break;
+#endif
 		result = rtkbt_simulate_disconnect_event(hu);
 		if (result < 0)
 			BT_ERR("rtkbt_simulate_disconnect_event error: %d", result);
@@ -868,6 +879,28 @@ static int hci_uart_pm_notifier(struct notifier_block *b, unsigned long v, void 
 	}
 
 	return 0;
+}
+
+int rtkbt_shutdown_notify(struct notifier_block *notifier,
+		    ulong pm_event, void *unused)
+{
+	int result;
+	struct hci_uart *hu = container_of(notifier, struct hci_uart, shutdown_notifier);
+
+	BT_INFO("%s: pm_event %ld", __func__, pm_event);
+	switch (pm_event) {
+	case SYS_POWER_OFF:
+	case SYS_RESTART:
+		result = rtkbt_notify_suspend(hu);
+		if (result < 0) {
+			BT_ERR("rtkbt_notify_suspend error: %d", result);
+		}
+		break;
+	default:
+		break;
+	}
+
+	return NOTIFY_DONE;
 }
 #endif
 
@@ -935,6 +968,11 @@ static int hci_uart_tty_open(struct tty_struct *tty)
 #if WOBT_NOTIFY
 	hu->pm_notify_block.notifier_call = hci_uart_pm_notifier;
 	register_pm_notifier(&hu->pm_notify_block);
+	/* Register POWER-OFF notifier */
+
+	BT_INFO("%s, register power off", __func__);
+	hu->shutdown_notifier.notifier_call = rtkbt_shutdown_notify;
+	register_reboot_notifier(&hu->shutdown_notifier);
 #endif
 
 	return 0;
@@ -981,6 +1019,7 @@ static void hci_uart_tty_close(struct tty_struct *tty)
 	hci_proto_free_rwlock(hu);
 #if WOBT_NOTIFY
 	unregister_pm_notifier(&hu->pm_notify_block);
+	unregister_reboot_notifier(&hu->shutdown_notifier);
 #endif
 
 	kfree(hu);
@@ -1026,7 +1065,11 @@ static void hci_uart_tty_wakeup(struct tty_struct *tty)
  */
 static void hci_uart_tty_receive(struct tty_struct *tty, const u8 * data,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 14, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+				 const u8 *flags, size_t count)
+#else
 				 const char *flags, int count)
+#endif
 #else
 				 char *flags, int count)
 #endif
@@ -1224,8 +1267,13 @@ static int hci_uart_set_flags(struct hci_uart *hu, unsigned long flags)
  *
  * Return Value:    Command dependent
  */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
+static int hci_uart_tty_ioctl(struct tty_struct *tty, unsigned int cmd,
+			      unsigned long arg)
+#else
 static int hci_uart_tty_ioctl(struct tty_struct *tty, struct file *file,
 			      unsigned int cmd, unsigned long arg)
+#endif
 {
 	struct hci_uart *hu = (void *)tty->disc_data;
 	int err = 0;
@@ -1240,38 +1288,40 @@ static int hci_uart_tty_ioctl(struct tty_struct *tty, struct file *file,
 	case HCIUARTSETPROTO:
 		if (!test_and_set_bit(HCI_UART_PROTO_SET, &hu->flags)) {
 			err = hci_uart_set_proto(hu, arg);
-			if (err) {
+			if (err)
 				clear_bit(HCI_UART_PROTO_SET, &hu->flags);
-				return err;
-			}
 		} else
-			return -EBUSY;
+			err = -EBUSY;
 		break;
 
 	case HCIUARTGETPROTO:
 		if (test_bit(HCI_UART_PROTO_SET, &hu->flags))
-			return hu->proto->id;
-		return -EUNATCH;
+			err = hu->proto->id;
+		else
+			err = -EUNATCH;
+		break;
 
 	case HCIUARTGETDEVICE:
 		if (test_bit(HCI_UART_REGISTERED, &hu->flags))
-			return hu->hdev->id;
-		return -EUNATCH;
+			err = hu->hdev->id;
+		else
+			err = -EUNATCH;
+		break;
 
 	case HCIUARTSETFLAGS:
 		if (test_bit(HCI_UART_PROTO_SET, &hu->flags))
-			return -EBUSY;
+			err = -EBUSY;
+		else
 #if HCI_VERSION_CODE >= KERNEL_VERSION(3, 17, 0)
-		err = hci_uart_set_flags(hu, arg);
-		if (err)
-			return err;
+			err = hci_uart_set_flags(hu, arg);
 #else
-		hu->hdev_flags = arg;
+			hu->hdev_flags = arg;
 #endif
 		break;
 
 	case HCIUARTGETFLAGS:
-		return hu->hdev_flags;
+		err = hu->hdev_flags;
+		break;
 
 	default:
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0)
@@ -1308,8 +1358,13 @@ static ssize_t hci_uart_tty_write(struct tty_struct *tty, struct file *file,
 	return 0;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 16, 0)
+static __poll_t hci_uart_tty_poll(struct tty_struct *tty,
+				      struct file *filp, poll_table * wait)
+#else
 static unsigned int hci_uart_tty_poll(struct tty_struct *tty,
 				      struct file *filp, poll_table * wait)
+#endif
 {
 	return 0;
 }

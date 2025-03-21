@@ -54,6 +54,8 @@
  *   rtkbt_set_le_device_poweron_data_filter() of hci_ldisc.c */
 #define RTKBT_TV_POWERON_DATA_FILTER	(0 * WOBT_NOTIFY)	/* 1  enable; 0  disable */
 
+#define RTKBT_POWERKEY_WAKEUP
+
 /* Ioctls */
 #define HCIUARTSETPROTO		_IOW('U', 200, int)
 #define HCIUARTGETPROTO		_IOR('U', 201, int)
@@ -114,6 +116,7 @@ struct hci_uart {
 
 #if WOBT_NOTIFY
 	struct notifier_block pm_notify_block;
+	struct notifier_block shutdown_notifier;
 #endif
 };
 

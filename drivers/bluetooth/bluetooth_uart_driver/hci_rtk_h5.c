@@ -173,6 +173,9 @@ static int h5_enqueue(struct hci_uart *hu, struct sk_buff *skb)
 	switch (bt_cb(skb)->pkt_type) {
 	case HCI_ACLDATA_PKT:
 	case HCI_COMMAND_PKT:
+#if HCI_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
+	case HCI_ISODATA_PKT:
+#endif
 		skb_queue_tail(&h5->rel, skb);
 		break;
 
@@ -233,6 +236,12 @@ static struct sk_buff *h5_prepare_pkt(struct h5_struct *h5, u8 * data,
 		chan = 14;	/* 3-wire Vendor Specific channel */
 		rel = 0;	/* unreliable channel */
 		break;
+#if HCI_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
+	case HCI_ISODATA_PKT:
+		chan = 5;
+		rel = 1;
+		break;
+#endif
 	default:
 		BT_ERR("Unknown packet type");
 		return NULL;
@@ -614,6 +623,12 @@ static void h5_complete_rx_pkt(struct hci_uart *hu)
 	} else if ((h5->rx_skb->data[1] & 0x0f) == 14) {
 		bt_cb(h5->rx_skb)->pkt_type = H5_VDRSPEC_PKT;
 		pass_up = 1;
+#if HCI_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
+	} else if ((h5->rx_skb->data[1] & 0x0f) == 5 &&
+		    h5->rx_skb->data[0] & 0x80) {
+		bt_cb(h5->rx_skb)->pkt_type = HCI_ISODATA_PKT;
+		pass_up = 1;
+#endif
 	} else
 		pass_up = 0;
 
